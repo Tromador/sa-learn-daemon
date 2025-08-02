@@ -12,6 +12,8 @@
 #include <stdarg.h>
 #include <time.h>
 
+#include <systemd/sd-daemon.h>
+
 #include "config.h"
 
 #define BUF_SIZE 4096
@@ -65,58 +67,10 @@ static void fatal(const char *msg) {
     exit(EXIT_FAILURE);
 }
 
-/* --- Daemonise --- */
-static void daemonise(void) {
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    }
-    if (pid > 0) {
-        // Parent exits
-        exit(EXIT_SUCCESS);
-    }
-
-    // Become session leader
-    if (setsid() < 0) {
-        perror("setsid");
-        exit(EXIT_FAILURE);
-    }
-
-    // Fork again to ensure no controlling terminal
-    pid = fork();
-    if (pid < 0)
-        exit(EXIT_FAILURE);
-    if (pid > 0)
-        exit(EXIT_SUCCESS);
-
-    // Change working directory
-    chdir("/");
-
-    // Close stdio
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
-
-    // Redirect stdio to /dev/null
-    int fd = open("/dev/null", O_RDWR);
-    if (fd >= 0) {
-        dup2(fd, STDIN_FILENO);
-        dup2(fd, STDOUT_FILENO);
-        dup2(fd, STDERR_FILENO);
-        if (fd > 2) close(fd);
-    }
-}
-
 int main(void) {
     int server_fd;
-    struct sockaddr_un addr;
-
     log_init();
-    log_msg("Starting sa_learn_daemon");
-
-    // Daemonise early
-    daemonise();
+    log_msg("Starting sa_learn_daemon (systemd socket-activated)");
 
     // SIGCHLD handler
     struct sigaction sa;
@@ -124,21 +78,17 @@ int main(void) {
     sa.sa_handler = handle_sigchld;
     sigaction(SIGCHLD, &sa, NULL);
 
-    if ((server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-        fatal("socket");
+    // Use the socket passed by systemd
+    int n = sd_listen_fds(0);
+    if (n < 0) {
+        fatal("sd_listen_fds");
+    }
+    if (n == 0) {
+        fatal("No socket passed from systemd");
+    }
+    server_fd = SD_LISTEN_FDS_START;  // FD 3
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
-
-    unlink(SOCKET_PATH);
-    if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
-        fatal("bind");
-
-    if (listen(server_fd, 5) == -1)
-        fatal("listen");
-
-    log_msg("Listening on %s", SOCKET_PATH);
+    log_msg("Listening on systemd-passed socket FD %d", server_fd);
 
     for (;;) {
         int client_fd = accept(server_fd, NULL, NULL);
@@ -147,6 +97,8 @@ int main(void) {
                 continue;
             fatal("accept");
         }
+
+        log_msg("Accepted connection");
 
         pid_t pid = fork();
         if (pid < 0) {
