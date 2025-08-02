@@ -1,11 +1,14 @@
 [Unit]
-Description=Socket for sa-learn-daemon
+Description=Daemon to run sa-learn via socket
+Requires=sa-learn.socket
+After=network.target
 
-[Socket]
-ListenStream=/var/run/sa-learn.sock
-SocketMode=0660
-SocketUser=spamassassin
-SocketGroup=mail
+[Service]
+ExecStart=/usr/local/bin/sa_learn_daemon
+User=spamd
+Group=mail
+Restart=on-failure
+Type=simple
 
 [Install]
-WantedBy=sockets.target
+WantedBy=multi-user.target
