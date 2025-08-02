@@ -1,0 +1,11 @@
+[Unit]
+Description=Socket for sa-learn-daemon
+
+[Socket]
+ListenStream=/var/run/sa-learn.sock
+SocketMode=0660
+SocketUser=spamassassin
+SocketGroup=mail
+
+[Install]
+WantedBy=sockets.target
