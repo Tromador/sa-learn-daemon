@@ -2,10 +2,11 @@
 Description=Socket for sa-learn-daemon
 
 [Socket]
-ListenStream=/run/spamassassin/sa-learn.sock
+ListenStream=/var/mail/run/sa-learn.sock
 SocketMode=0660
 SocketUser=spamd
 SocketGroup=mail
+DirectoryMode=0770
 
 [Install]
 WantedBy=sockets.target
