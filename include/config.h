@@ -5,7 +5,7 @@
 #define SA_LEARN_PATH "/usr/bin/sa-learn"
 
 /* Path to the Unix domain socket */
-#define SOCKET_PATH "/run/spamassassin/sa-learn.sock"
+#define SOCKET_PATH "/var/mail/run/sa-learn.sock"
 
 /* Socket permissions: will be set by systemd in practice */
 #define SOCKET_MODE 0660
