@@ -2,7 +2,7 @@
 
 CC      := gcc
 CFLAGS  := -Wall -Wextra -O2 -pipe
-LDFLAGS :=
+LDFLAGS := -lsystemd
 
 TARGET  := sa_learn_daemon
 SRC     := src/sa_learn_daemon.c
