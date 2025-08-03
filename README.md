@@ -55,13 +55,20 @@ and pipes the message body into `sa-learn` via stdin.
 
 ---
 
-## Default Socket
+## Socket
+
+Default socket path:
 
 ```
 /var/mail/run/sa-learn.sock
 ```
 
 (Defined in `include/config.h`.)
+
+**Important:**  
+We use `/var/mail/run/` rather than the usual `/run/` because **Dovecot runs inside a private filesystem namespace**.  
+In that namespace, `/run/` from the host is not visible.  
+A socket placed in `/var/mail/run/` is visible both to Dovecot and to system services, avoiding confusing “file not found” errors during IMAPSieve operations.
 
 **Permissions:**
 
@@ -122,26 +129,18 @@ Place these in `/usr/local/bin/` and make them executable (`chmod 755`):
 
 ```bash
 #!/bin/bash
-echo "SPAM $USER"
-cat
+{
+  echo "SPAM $USER"
+  cat
+} | /usr/bin/socat - UNIX-CONNECT:/var/mail/run/sa-learn.sock
 ```
 
 #### sa-learn-ham.sh
 
 ```bash
 #!/bin/bash
-echo "HAM $USER"
-cat
-```
-
-The `echo` writes the required first line to the socket; `cat` streams the message.
-
-The Sieve script pipes to these scripts, and these scripts can internally call `socat`, for example:
-
-```bash
-#!/bin/bash
 {
-  echo "SPAM $USER"
+  echo "HAM $USER"
   cat
 } | /usr/bin/socat - UNIX-CONNECT:/var/mail/run/sa-learn.sock
 ```
@@ -227,6 +226,53 @@ BSD 3-Clause
 4. `sa_learn_daemon` (socket-activated) executes `sa-learn`.
 
 With the SELinux policy module loaded, this works in full enforcing mode.
+
+---
+
+## Appendix: Sample SELinux Policy Module
+
+**Note:**  
+This example policy worked in one tested environment.  
+Adjustments may be necessary depending on your distribution and customizations.  
+Always validate using `audit2allow` output before deploying to production.
+
+Save as `dovecot_sa_learn.te`:
+
+```te
+module dovecot_sa_learn 1.0;
+
+require {
+    type init_t;
+    type dovecot_auth_t;
+    type dovecot_t;
+    type dovecot_tmp_t;
+    type mail_spool_t;
+    type unconfined_service_t;
+    class process { noatsecure ptrace rlimitinh siginh };
+    class sock_file write;
+    class file unlink;
+    class unix_stream_socket connectto;
+}
+
+# Allow Dovecot sieve scripts to talk to sa_learn_daemon
+allow dovecot_t mail_spool_t:sock_file write;
+allow dovecot_t unconfined_service_t:unix_stream_socket connectto;
+
+# Allow internal Dovecot process interactions
+allow dovecot_t dovecot_auth_t:process { noatsecure rlimitinh siginh };
+allow dovecot_t self:process ptrace;
+
+# Allow systemd to unlink leftover dovecot temp files
+allow init_t dovecot_tmp_t:file unlink;
+```
+
+Build and install:
+
+```bash
+checkmodule -M -m -o dovecot_sa_learn.mod dovecot_sa_learn.te
+semodule_package -o dovecot_sa_learn.pp -m dovecot_sa_learn.mod
+semodule -i dovecot_sa_learn.pp
+```
 
 ---
 
